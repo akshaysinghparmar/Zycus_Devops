@@ -1,0 +1,94 @@
+Assignment 1 :
+ 
+Write a Dockerfile (CentOS 6) to install the following in a Docker continer:
+Python 2.7
+MongoDB - any version
+Apache tomcat 7 - running on port 8080
+ 
+Please include comments at every command explaining what it does.
+Write the command to run the Dockerfile such that once the container boots, apache tomcat's 
+
+home page is accessible from the host on port 7080.
+
+
+
+Solution:
+
+There are some kernel compatiblity issues in CentOS 6. Still I have write Docker file to create 
+
+Docker container.
+
+
+
+##Docker file is to install apache tomcat with python and mongoDB
+
+FROM centos:centos6
+MAINTAINER Akshay <akshay.singhparmar@gmail.com>
+
+ENV PATH /usr/bin:/usr/sbin:/bin:/sbin
+
+##Installing required packages
+
+RUN yum clean all ; yum -y install epel-release; yum clean all
+
+RUN yum -y install java-openjdk python-2.7*
+
+#Download Tomcat package and cp to local
+
+ADD http://www-eu.apache.org/dist/tomcat/tomcat-7/v7.0.73/bin/apache-tomcat-7.0.73.tar.gz 
+
+/usr/local/
+
+#Adding tomcat for startup script "Please see the startup file tomcat under local  Tomcat 
+
+Directoy"
+ADD tomcat /etc/init.d/tomcat
+
+
+RUN cd /usr/local// && tar -xvf apache-tomcat-7.0.73.tar.gz
+
+###Mongo DB Setup
+
+##setting up repository
+RUN echo -e "[mongodb]\nname=MongoDB Repository\nbaseurl=http://downloads-
+
+distro.mongodb.org/repo/redhat/os/x86_64/\ngpgcheck=0\nenabled=1" >> 
+
+/etc/yum.repos.d/mongodb.repo
+
+RUN yum clean all ; yum -y  install mongo-10gen mongo-10gen-server
+
+EXPOSE 8080
+EXPOSE 7080
+
+CMD ["/sbin/init"]
+
+##Below Script is not required, I just write it to make sure that tomcat is up and running. 
+######Tomcat startup script
+
+#!/bin/bash
+# description: Tomcat Start Stop Restart
+# processname: tomcat
+# chkconfig: 234 20 80
+JAVA_HOME=/usr/java/jdk1.7.0_05
+export JAVA_HOME
+PATH=$JAVA_HOME/bin:$PATH
+export PATH
+CATALINA_HOME=/usr/share/apache-tomcat-7.0.29
+
+case $1 in
+start)
+sh $CATALINA_HOME/bin/startup.sh
+;;
+stop)
+sh $CATALINA_HOME/bin/shutdown.sh
+;;
+restart)
+sh $CATALINA_HOME/bin/shutdown.sh
+sh $CATALINA_HOME/bin/startup.sh
+;;
+esac
+exit 0
+
+
+#####

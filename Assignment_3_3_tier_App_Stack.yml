@@ -1,0 +1,126 @@
+ 
+Assignment 3: 
+ 
+Considering a three-tier app (web server, app server and database).
+[ Apache Web server -> Tomcat app server -> database ]
+How would you build an app stack (leave out the database) that has no single point of failure 
+
+and is fault-tolerant?
+Explicitly state the assumptions you are making, if any.
+ 
+
+Solution:
+
+heat_template_version: 2014-10-16
+
+description: >
+  This is a very simple template that illustrates automatic scaling up and down
+  using OS::Heat::AutoScalingGroup. CPU load is generated for
+  15 mins after each instance is spawned, triggering a scale-up event.
+  Once the max number of instances has been reached and the CPU
+  load generation has finished, the number of instances will be scaled
+  back down to 1.
+parameters:
+
+
+
+resources:
+
+  asg:
+    type: OS::Heat::AutoScalingGroup
+   #depends_on: public_subnet
+    properties:
+      min_size: 2
+      max_size: 2
+      resource:
+        type: OS::Nova::Server
+        properties:
+          flavor: "micro"
+          image: Centos-dev-generic-iso
+          networks:
+            - network: cc88bd1b-03d1-4a3f-a2f2-85b1f3d36566
+          metadata: {"metering.stack": {get_param: "OS::stack_id"}}
+          user_data_format: RAW
+          user_data:
+            #!/bin/sh
+            yum install apache tomcat mysql keepalived -y
+     cp /usr/share/apache/index.html /etc/apache/
+     cat > /etc/keepalived/keepalived.conf
+     vrrp_script chk_services {
+     script "pidof /usr/sbin/apache” # check the haproxy process
+            interval 4 # every 4 seconds
+     weight 2 # add 2 points if OK
+            }
+
+ vrrp_instance VI_1 {
+ interface eth0 # interface to monitor
+ state MASTER # MASTER on haproxy1, BACKUP on haproxy2
+ virtual_router_id 101
+ advert_int 2
+ priority 151 # 151 on haproxy1, 150 on haproxy2
+ virtual_ipaddress {
+  10.x.x.x/24 # virtual ip address 
+ } 
+ track_script {
+  chk_services
+ }
+}
+
+  scale_up_policy:
+    type: OS::Heat::ScalingPolicy
+    properties:
+      adjustment_type: change_in_capacity
+      auto_scaling_group_id: {get_resource: asg}
+      cooldown: 60
+      scaling_adjustment: 1
+
+  scale_down_policy:
+    type: OS::Heat::ScalingPolicy
+    properties:
+      adjustment_type: change_in_capacity
+      auto_scaling_group_id: {get_resource: asg}
+      cooldown: 60
+      scaling_adjustment: '-1'
+
+  cpu_alarm_high:
+    type: OS::Ceilometer::Alarm
+    properties:
+      description: Scale-up if the average CPU > 50% for 1 minute
+      meter_name: cpu_util
+      statistic: avg
+      period: 60
+      evaluation_periods: 1
+      threshold: 50
+      alarm_actions:
+        - {get_attr: [scale_up_policy, alarm_url]}
+      matching_metadata: {'metadata.user_metadata.stack': {get_param: "OS::stack_id"}}
+      comparison_operator: gt
+  cpu_alarm_low:
+    type: OS::Ceilometer::Alarm
+    properties:
+      description: Scale-down if the average CPU < 15% for 10 minutes
+      meter_name: cpu_util
+      statistic: avg
+      period: 600
+      evaluation_periods: 1
+      threshold: 15
+      alarm_actions:
+        - {get_attr: [scale_down_policy, alarm_url]}
+      matching_metadata: {'metadata.user_metadata.stack': {get_param: "OS::stack_id"}}
+      comparison_operator: lt
+
+outputs:
+  scale_up_url:
+    description: >
+      Webhook URL to scale up the group.
+      You can invoke the scale-up operation by doing an HTTP POST to this URL.
+    value: {get_attr: [scale_up_policy, alarm_url]}
+  scale_dn_url:
+    description: >
+      Webhook URL to scale down the group.
+      You can invoke the scale-down operation by doing an HTTP POST to this URL.
+    value: {get_attr: [scale_down_policy, alarm_url]}
+  server_list:
+    description: >
+      List of server names that are part of the group.
+    value: {get_attr: [asg, outputs_list, name]}
